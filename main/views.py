@@ -1,122 +1,138 @@
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
-from rest_framework import generics
+from rest_framework.generics import ListCreateAPIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.core.cache import cache
 
-from .models import (
-    Massage,
-    Birinchisahifa,
-    Appdownload,
-    TeamMember,
-    Feature,
-    TeamGroup,
-    TeamSectionFeature,
-    HowItWorksStep,
-    VideoSection,
-    AppProblemSolution,
-    Testimonial,
-    PricingPlan,
-    FooterLink,
-    FooterSettings,
-)
-from .serializers import (
-    MassageSerializer,
-    BirinchisahifaSerializer,
-    AppdownloadSerializer,
-    TeamMemberSerializer,
-    FeatureSerializer,
-    TeamGroupSerializer,
-    TeamSectionFeatureSerializer,
-    HowItWorksStepSerializer,
-    VideoSectionSerializer,
-    AppProblemSolutionSerializer,
-    TestimonialSerializer,
-    PricingPlanSerializer,
-    FooterLinkSerializer,
-    FooterSettingsSerializer,
-)
+from .models import *
+from .serializers import *
 
-CACHE_TTL = 60 * 15
+CACHE_TTL = 60 * 10
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class MassageListView(generics.ListAPIView):
+class BaseCachedListCreateAPIView(ListCreateAPIView):
+
+    @property
+    def cache_prefix(self):
+        return self.__class__.__name__
+
+    def list(self, request, *args, **kwargs):
+        query_string = request.META.get('QUERY_STRING', '')
+        key = f"{self.cache_prefix}:list:{query_string}"
+
+        cached_data = cache.get(key)
+
+        if cached_data is not None:
+            return Response(
+                {
+                    "success": True,
+                    "message": "get ishladi (cache)",
+                    "data": cached_data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        response = super().list(request, *args, **kwargs)
+        data_to_cache = response.data
+
+        cache.set(key, data_to_cache, timeout=CACHE_TTL)
+
+        return Response(
+            {
+                "success": True,
+                "message": "get ishladi",
+                "data": data_to_cache,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        keys_pattern = f"{self.cache_prefix}:list:*"
+        if hasattr(cache, 'delete_pattern'):
+            cache.delete_pattern(keys_pattern)
+        else:
+            query_string = request.META.get('QUERY_STRING', '')
+            key = f"{self.cache_prefix}:list:{query_string}"
+            cache.delete(key)
+
+        return Response(
+            {
+                "success": True,
+                "message": "created successfully",
+                "data": serializer.data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MassageListView(BaseCachedListCreateAPIView):
     queryset = Massage.objects.all()
     serializer_class = MassageSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class BirinchisahifaListView(generics.ListAPIView):
+class BirinchisahifaListView(BaseCachedListCreateAPIView):
     queryset = Birinchisahifa.objects.all()
     serializer_class = BirinchisahifaSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class AppdownloadListView(generics.ListAPIView):
+class AppdownloadListView(BaseCachedListCreateAPIView):
     queryset = Appdownload.objects.all()
     serializer_class = AppdownloadSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class TeamMemberListView(generics.ListAPIView):
+class TeamMemberListView(BaseCachedListCreateAPIView):
     queryset = TeamMember.objects.all()
     serializer_class = TeamMemberSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class FeatureListView(generics.ListAPIView):
+class FeatureListView(BaseCachedListCreateAPIView):
     queryset = Feature.objects.all()
     serializer_class = FeatureSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class TeamGroupListView(generics.ListAPIView):
+class TeamGroupListView(BaseCachedListCreateAPIView):
     queryset = TeamGroup.objects.all()
     serializer_class = TeamGroupSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class TeamSectionFeatureListView(generics.ListAPIView):
+class TeamSectionFeatureListView(BaseCachedListCreateAPIView):
     queryset = TeamSectionFeature.objects.all()
     serializer_class = TeamSectionFeatureSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class HowItWorksStepListView(generics.ListAPIView):
+class HowItWorksStepListView(BaseCachedListCreateAPIView):
     queryset = HowItWorksStep.objects.all()
     serializer_class = HowItWorksStepSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class VideoSectionListView(generics.ListAPIView):
+class VideoSectionListView(BaseCachedListCreateAPIView):
     queryset = VideoSection.objects.all()
     serializer_class = VideoSectionSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class AppProblemSolutionListView(generics.ListAPIView):
+class AppProblemSolutionListView(BaseCachedListCreateAPIView):
     queryset = AppProblemSolution.objects.all()
     serializer_class = AppProblemSolutionSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class TestimonialListView(generics.ListAPIView):
+class TestimonialListView(BaseCachedListCreateAPIView):
     queryset = Testimonial.objects.all()
     serializer_class = TestimonialSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class PricingPlanListView(generics.ListAPIView):
+class PricingPlanListView(BaseCachedListCreateAPIView):
     queryset = PricingPlan.objects.all()
     serializer_class = PricingPlanSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class FooterLinkListView(generics.ListAPIView):
+class FooterLinkListView(BaseCachedListCreateAPIView):
     queryset = FooterLink.objects.all()
     serializer_class = FooterLinkSerializer
 
 
-@method_decorator(cache_page(CACHE_TTL), name='dispatch')
-class FooterSettingsListView(generics.ListAPIView):
+class FooterSettingsListView(BaseCachedListCreateAPIView):
     queryset = FooterSettings.objects.all()
     serializer_class = FooterSettingsSerializer
