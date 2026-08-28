@@ -1,3 +1,4 @@
+# tasks_demo/serializers.py
 from rest_framework import serializers
 from .models import (
     Massage,
@@ -99,3 +100,13 @@ class FooterSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = FooterSettings
         fields = '__all__'
+
+
+# Celery vazifalari uchun serializerlar
+class EmailTaskSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    message = serializers.CharField(max_length=500)
+
+
+class ResizeImageSerializer(serializers.Serializer):
+    file = serializers.ImageField()

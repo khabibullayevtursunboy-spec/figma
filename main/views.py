@@ -1,16 +1,22 @@
-from rest_framework.generics import ListCreateAPIView
-from rest_framework.response import Response
-from rest_framework import status
+# tasks_demo/views.py
+import os
 from django.core.cache import cache
+from django.core.files.storage import default_storage
+from rest_framework import status
+from rest_framework.generics import ListCreateAPIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 
 from .models import *
 from .serializers import *
+
 
 CACHE_TTL = 60 * 10
 
 
 class BaseCachedListCreateAPIView(ListCreateAPIView):
-
     @property
     def cache_prefix(self):
         return self.__class__.__name__
@@ -67,6 +73,8 @@ class BaseCachedListCreateAPIView(ListCreateAPIView):
             status=status.HTTP_201_CREATED,
         )
 
+
+# --- Figma Modellariga tegishli Viewlar ---
 
 class MassageListView(BaseCachedListCreateAPIView):
     queryset = Massage.objects.all()
@@ -136,3 +144,111 @@ class FooterLinkListView(BaseCachedListCreateAPIView):
 class FooterSettingsListView(BaseCachedListCreateAPIView):
     queryset = FooterSettings.objects.all()
     serializer_class = FooterSettingsSerializer
+
+
+# --- Celery Asinxron Vazifalar Uchun Viewlar ---
+
+class AddTaskCreateView(APIView):
+    def post(self, request):
+        serializer = AddTaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        async_result = add.delay(
+            serializer.validated_data["x"],
+            serializer.validated_data["y"],
+        )
+
+        return Response(
+            {
+                "task_id": async_result.id,
+                "state": "PENDING",
+                "status_url": f"/api/tasks/{async_result.id}/",
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class TaskStatusView(APIView):
+    def get(self, request, task_id):
+        return Response(build_task_status(task_id))
+
+    def delete(self, request, task_id):
+        celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+        return Response(
+            {"task_id": task_id, "state": "REVOKED"},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ImportCSVView(APIView):
+    def post(self, request):
+        csv_file = request.FILES.get("file")
+        if not csv_file:
+            return Response({"error": "Fayl topilmadi"}, status=status.HTTP_400_BAD_REQUEST)
+
+        file_content = csv_file.read()
+        async_result = import_csv_task.delay(file_content)
+
+        return Response(
+            {
+                "task_id": async_result.id,
+                "status": "Import jarayoni boshlandi",
+                "status_url": f"/api/tasks/{async_result.id}/",
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class SumRangeCreateView(APIView):
+    def post(self, request):
+        n = request.data.get("n", 1000000)
+        async_result = sum_range.delay(n)
+        return Response(
+            {
+                "task_id": async_result.id,
+                "state": "PENDING",
+                "status_url": f"/api/tasks/{async_result.id}/",
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class ResizeImageView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ResizeImageSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        image_file = serializer.validated_data["file"]
+        file_path = default_storage.save(image_file.name, image_file)
+        async_result = resize_image_task.delay(file_path)
+
+        return Response(
+            {
+                "task_id": async_result.id,
+                "state": "PENDING",
+                "status_url": f"/api/tasks/{async_result.id}/",
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class SendEmailTaskView(APIView):
+    def post(self, request):
+        serializer = EmailTaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user_email = serializer.validated_data["email"]
+        message = serializer.validated_data["message"]
+
+        async_result = send_notification_email.delay(user_email, message)
+
+        return Response(
+            {
+                "task_id": async_result.id,
+                "state": "PENDING",
+                "status_url": f"/api/tasks/{async_result.id}/",
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
